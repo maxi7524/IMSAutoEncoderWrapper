@@ -1,0 +1,20 @@
+{
+    "name": "M2aia Research Environment",
+    "build": {
+        "dockerfile": "../Dockerfile"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-toolsai.jupyter",
+                "ms-python.vscode-pylint"
+            ]
+        }
+    },
+    "remoteUser": "root",
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/app,type=bind"
+    ],
+    "workspaceFolder": "/app"
+}

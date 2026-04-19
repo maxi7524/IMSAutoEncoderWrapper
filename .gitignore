@@ -1,2 +1,5 @@
 __pycache__
 *data
+*.tar.gz
+*.tar
+*.zip
