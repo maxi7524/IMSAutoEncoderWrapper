@@ -20,7 +20,7 @@ class ContrastiveAutoencoder(nn.Module):
     def __init__(self, input_dim, kernel_sizes, encoding_dim, hidden_dims, strides):
         super().__init__()
         self.activation = nn.ReLU()
-        self.net = nn.ModuleList()
+        self.net = nn.ModuleList( )
         self.dims = [input_dim]  # To store the dimensions at each layer
 
         current_dim = input_dim
