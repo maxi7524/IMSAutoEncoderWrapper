@@ -114,7 +114,7 @@ def train_loop_ims_contrastive_model(
 def suggest_cnn_configuration(IMSLoader: IMSPyTorchDataset, latent_dim: int, hyperparameters: dict):
     #TODO - suggest configuration
     # deterministic
-    input_dim = IMSLoader.img.GetNumberOfSpectra()
+    input_dim = len(IMSLoader.grid)
 
     # predicted | given *if hyperparameters are not none apply hyperparameters 
     

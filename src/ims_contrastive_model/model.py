@@ -120,7 +120,7 @@ class IMSContrastiveModel:
     # helpers
     # ---------------------
 
-    def save(self, path: str | Path = None):
+    def save(self, path: str | Path = None, filename: str = "model_weights.pt"):
         """Saves model weights and training configuration."""
         # obtain paths
         if path is None:
@@ -131,7 +131,7 @@ class IMSContrastiveModel:
 
         # save
         ## model wages
-        torch.save(self.model.state_dict(), path / "model_weights.pt")
+        torch.save(self.model.state_dict(), path / filename)
         ## training history
         if self._history:
             df = pd.DataFrame(self._history)
