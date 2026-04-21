@@ -16,8 +16,44 @@ import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
+# IMS 
+import m2aia as m2
+from .dataloader import IMSPyTorchDataset
 
-def suggest_cnn_configs(input_dim: int, possible_kernel_sizes: list = [3, 5, 11, 15], num_layers: int = 5) -> dict:
+# ---------------------
+# train loop
+# ---------------------
+
+
+# ---------------------
+# helpers
+# ---------------------
+
+def suggest_cnn_configuration(IMSLoader: IMSPyTorchDataset, latent_dim: int, hyperparameters: dict):
+    #TODO - suggest configuration
+    # deterministic
+    input_dim = IMSLoader.img.GetNumberOfSpectra()
+
+    # predicted 
+    
+    test_params = {
+        # deterministic
+        'input_dim': input_dim,
+        'latent_dim': latent_dim,
+        # written 
+        # CNN 
+        'channels': [1, 2, 4, 16, 32, 64],
+        'kernels': [7, 7, 5, 5, 5],
+        'strides': [2, 3, 3, 3, 3]
+    }
+
+    return test_params 
+
+# ---------------------
+# OLD 
+# ---------------------
+
+def old_suggest_cnn_configs(input_dim: int, possible_kernel_sizes: list = [3, 5, 11, 15], num_layers: int = 5) -> dict:
     """
     Finds optimal convolution configurations (kernels and strides) 
     """

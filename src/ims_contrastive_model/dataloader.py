@@ -1,7 +1,7 @@
 """
-ims-contrastive-model/dataloader.py
+ims_contrastive_model/dataloader.py
 ----------------------------------
-Contains code for dataloader for m2aia ims-contrastive-model
+Contains code for dataloader for m2aia ims_contrastive_model
 """
 
 # base
@@ -13,6 +13,8 @@ import m2aia as m2
 # resampling method
 from scipy.stats import binned_statistic
 
+
+# TODO - we could use certain *mask* (so we do not batch noise pixel ~ match faster learning)
 
 
 class IMSPyTorchDataset(Dataset):
@@ -88,7 +90,7 @@ class IMSPyTorchDataset(Dataset):
 
     def __len__(self):
         """Returns the total number of spectra available in the m2aia object."""
-        return self._img.GetNumberOfSpectra()
+        return self.img.GetNumberOfSpectra()
 
     def __getitem__(self, idx):
         """
@@ -107,7 +109,7 @@ class IMSPyTorchDataset(Dataset):
         """
         # load data
         try: 
-            mzs, intensities = self._img.GetSpectrum(idx)
+            mzs, intensities = self.img.GetSpectrum(idx)
             ## map to common axis
             mapped_val = self._resample(mzs=mzs, intensities=intensities)
             return torch.tensor(mapped_val, dtype=torch.float32)
@@ -163,7 +165,10 @@ class IMSPyTorchDataset(Dataset):
     # getters and setters
     # ---------------------
     
-    
+    @property
+    def img(self):
+        return self._img
+
     @property
     def mz_min(self):
         return self._mz_min
