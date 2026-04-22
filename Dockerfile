@@ -14,21 +14,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim \
     curl \
     # m2aia dependencies
-    libglu1-mesa-dev \
-    libtiff5-dev \
-    qtbase5-dev \
-    libqt5svg5-dev \
-    libqt5opengl5-dev \
-    libqt5xmlpatterns5-dev \
-    qtwebengine5-dev \
-    qttools5-dev \
-    libqt5charts5-dev \
-    libqt5x11extras5-dev \
-    libopenslide-dev \
-    wget \
-    tar \
-    build-essential \
-    patchelf \
+    libgl1 \
+    libgomp1 \
+    libfontconfig1 \
+    libdbus-1-3 \
+    libxcursor1 \
+    libxinerama1 \
+    libxrandr2 \
+    libxi6 \
+    libxfixes3 \
+    libxcb-icccm4 \
+    libxcb-image0 \
+    libxcb-keysyms1 \
+    libxcb-render-util0 \
+    libxcb-shape0 \
+    libxcb-xinerama0 \
+    libxcb-xkb1 \
+    libxkbcommon-x11-0 \
+    # Additional dependencies Qt
+    libtiff6 \
+    libopenslide0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install 'uv' for fast package management
@@ -75,9 +80,5 @@ RUN mkdir -p /tmp/m2aia_bin && \
 # Register the kernel for Jupyter
 RUN python3 -m ipykernel install --user --name m2aia_env --display-name "Python 3.12 (M2aia_Docker)"
 
-ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/m2aia/bin:$LD_LIBRARY_PATH
-
-# Expose port for Jupyter
 EXPOSE 8888
-
 CMD ["bash"]

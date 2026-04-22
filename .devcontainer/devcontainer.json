@@ -19,7 +19,7 @@
         "source=${localWorkspaceFolder},target=/app,type=bind",
         "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind,consistency=cached"
     ],
-    "workspaceFolder": "/app"
+    "workspaceFolder": "/app",
     "forwardPorts": [],
     "postCreateCommand": "chmod 700 /root/.ssh && chmod 600 /root/.ssh/*"
 }
