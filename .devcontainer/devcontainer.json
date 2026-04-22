@@ -1,8 +1,7 @@
 {
     "name": "M2aia Research Environment",
     "build": {
-        "dockerfile": "../Dockerfile",
-        "options": ["--platform=linux/amd64"]
+        "dockerfile": "../Dockerfile"
     },
     "customizations": {
         "vscode": {
@@ -11,7 +10,6 @@
                 "ms-toolsai.jupyter",
                 "ms-python.vscode-pylint"
             ]
-            
         }
     },
     "remoteUser": "root",
@@ -20,6 +18,5 @@
         "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind,consistency=cached"
     ],
     "workspaceFolder": "/app",
-    "forwardPorts": [],
     "postCreateCommand": "chmod 700 /root/.ssh && chmod 600 /root/.ssh/*"
 }
