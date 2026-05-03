@@ -27,8 +27,7 @@ def mock_m2aia_reader():
     # Mocking GetSpectrum(idx) -> (mz_array, intensity_array)
     def mock_get_spectrum(idx):
         if idx >= 10:
-            # W oryginalnym kodzie dataloader.py jest try-except, 
-            # więc symulujemy błąd m2aia, który powinien być obsłużony
+            # Simulate out of bounds error 
             raise IndexError("Out of bounds")
         mzs = np.linspace(100.0, 200.0, 50)
         intensities = np.random.rand(50).astype(np.float32)

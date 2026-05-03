@@ -1,7 +1,14 @@
-__pycache__
+# local files
+notes_to_apply.md
+
+# data
 *data
 *.tar.gz
 *.tar
 *.zip
 
+# python
+__pycache__ 
+.pytest_cache
+.vscode
 .to_delete

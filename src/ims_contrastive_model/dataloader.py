@@ -77,7 +77,7 @@ class IMSPyTorchDataset(Dataset):
         self._mz_resolution = mz_resolution if mz_resolution is not None else float(m2aia_img.GetMetaData()['pixel size z'])
         
         ## resampling 
-        ### 
+        ### resampling method 
         self._resampling_method = resampling_method
         ### Grid arrange {x in [min_mz, max_mz] | x = min_mz + i * mz_resolution, i \in N}
         self._grid = np.arange(
@@ -123,6 +123,7 @@ class IMSPyTorchDataset(Dataset):
     # ---------------------
     # helpers
     # ---------------------
+
     def _resample(self, mzs, intensities):
         """
         Projects raw m/z intensities onto the fixed self.grid.
