@@ -44,7 +44,7 @@ class IMSContrastiveModel(IMSModelVisualizer):
                 # train
                 ## parameters
                 epochs: int = 10, 
-                batch_size: int = 256, 
+                batch_size: int = 64, 
                 lr: float = 1e-3,
                 patience_limit: int = 5,
                 *,
