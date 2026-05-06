@@ -1,3 +1,10 @@
+Metadata-Version: 2.4
+Name: IMSAutoEncoderWrapper
+Version: 0.0.1
+Summary: MIMUW love forever - Autoencoder wrapper for IMS data
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
 
 ## IMSAutoEncoderWrapper
 
