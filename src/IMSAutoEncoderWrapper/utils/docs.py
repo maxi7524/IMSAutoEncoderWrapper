@@ -1,96 +1,78 @@
-"""
-Technical Documentation for IMSContrastiveModel
-Reference: "Efficient Compression of Mass Spectrometry Images via Contrastive Learning-Based Encoding"
-Link: https://pubmed.ncbi.nlm.nih.gov/40689435/
-"""
 
-IMSContrastiveModel_DOC = """
-    Main class for Contrastive Mass Spectrometry Imaging (MSI) compression and encoding.
-    
-    This model utilizes a Contrastive Autoencoder (CAE) to map high-dimensional MSI 
-    spectra into a compact latent space. It leverages self-supervised learning 
-    (InfoNCE loss) combined with reconstruction objectives to preserve both 
-    global spatial structures and local chemical variances.
 
-    Architecture Overview:
-        1. Encoder: 1D-CNN layers reducing spectral bins to a latent manifold.
-        2. Projector: Non-linear MLP mapping latent features to a hypersphere for contrastive task.
-        3. Decoder: Transposed 1D-CNN reconstructing the original m/z signal.
+IMSAutoEncoder_main_DOC = """
+        High-level Manager for the Contrastive IMS Autoencoder lifecycle.
 
-    Loss Function Components:
-        L_total = λ1*L_contrastive + λ2*L_mse + λ3*L_var + λ4*L_mean
+        This class orchestrates the interaction between the neural network architecture, 
+        the loss criteria, and the data loaders. It is designed to guide the user 
+        through two primary workflows:
 
-        - Contrastive (InfoNCE): Maximizes agreement between augmented views of the same pixel.
-        - Reconstruction (MSE): Ensures the latent space retains enough information to recover spectra.
-        - Variance Regularization (L_var): Forces the standard deviation of latent features across 
-          the batch to approach 1, preventing dimensional collapse.
-        - Mean Regularization (L_mean): Penalizes the mean of latent activations to center 
-          the distribution around zero.
+        The model supports advanced operations like full-image transformation, 
+        latent space grid generation, and compressed I/O (.npz to reconstructed .imzML).
 
-    Example Hyperparameters:
-        >>> hyperparameters = {
-        ...    'channels': [1, 16, 32, 64, 128],  # Filters per layer
-        ...    'kernels': [7, 5, 5, 3, 3],        # Receptive field per layer
-        ...    'strides': [2, 2, 2, 2, 2]         # Downsampling factor
-        ... }
+        **Create model**
+
+                **Workflow A: Creating and Training a New Model**
+                1. Initialize the class with a path.
+                2. Set the Dataset, Architecture, and Criterion.
+                3. Run ``.fit()`` to train and ``.save()`` to store the result.
+
+                **Workflow B: Loading an Existing Model**
+                1. Initialize the class with the path to the model folder.
+                2. Run ``.load()`` to automatically reconstruct the Architecture, Binners, 
+                and weights from the stored JSON configuration.
+
+        **NEXT OPERATIONS**
+        TODO
+
+
     """
 
-IMSContrastiveModel_init_DOC = """
-        Initializes the model with MSI data provider and training parameters.
+IMSAutoEncoder_fit_DOC = """
+        Runs the full training pipeline using the ``train_model`` engine.
 
-        Args:
-            IMSLoader (IMSPyTorchDataset): CusDOCStom dataset handling .imzML resampling and binning.
-            latent_dim (int): Dimensionality of the compressed manifold (e.g., 32, 64).
-            epochs (int): Maximum number of training iterations.
-            batch_size (int): Number of spectra per optimization step.
-            lr (float): Learning rate for Adam optimizer.
-            patience_limit (int): Early stopping patience.
-            hyperparameters (dict): Manual CNN configuration. If None, suggest_cnn_configuration is used.
+        This method prepares the DataLoader, handles hardware allocation, 
+        and sets up persistence callbacks.
+
+
+
+
+        :param save_dir: Directory to save weights and logs. Defaults to model path.
+        :type save_dir: str | Path, optional
+        :param continue_training: If True, attempts to load 'model_latest.pt' 
+                                  to resume training from the last state.
+        :type continue_training: bool
+        :param train_model_config: Overrides for training params (epochs, lr, etc.).
+        :type train_model_config: dict, optional
+        :param TorchLoader_config: Overrides for DataLoader (batch_size, num_workers).
+        :type TorchLoader_config: dict, optional
         """
 
-IMSContrastiveModel_fit_DOC = """
-        Executes the training pipeline.
+IMSAutoEncoder_transform_DOC = """
+        Processes the entire dataset through the encoder to create a latent map.
 
-        Builds the architecture based on the m/z grid size, initializes the dual-objective 
-        loss, and runs the optimization loop with early stopping and learning rate scheduling.
-
-        Args:
-            save_dir (str): Path to store model weights (model_weights.pt) and config.json.
-            
-        Example:
-            >>> model.fit(save_dir="./models/bladder_test")
+        :returns: Matrix of latent embeddings for all pixels. Shape: ``[N_pixels, latent_dim]``.
+        :rtype: np.ndarray
         """
 
-IMSContrastiveModel_transform_DOC = """
-        Encodes the entire MSI image into the latent space.
+IMSAutoEncoder_encode_DOC = """
+        Encodes raw spectra into the latent space.
 
-        Iterates through the full IMSLoader without augmentation to produce a 
-        static compressed representation of the tissue.
-
-        Returns:
-            np.ndarray: Matrix of shape [N_pixels, latent_dim].
-        
-        Example:
-            >>> latent_space = model.transform()
-            >>> print(latent_space.shape) # (17417, 64)
+        :param x: Input spectra. Can be a single spectrum or a batch.
+                  Expected shape: ``[Batch, Bins]`` or ``[Bins]``.
+        :type x: torch.Tensor | np.ndarray
+        :returns: L2-normalized latent embeddings of shape ``[Batch, latent_dim]``.
+        :rtype: np.ndarray
         """
 
-IMSContrastiveModel_encode_DOC = """
-        Maps a batch of raw spectra to the L2-normalized latent space.
+IMSAutoEncoder_decode_DOC = """
+        Decodes latent vectors back into the spectral domain.
 
-        Args:
-            x (torch.Tensor): Input spectra tensor of shape [Batch, Bins].
-
-        Returns:
-            np.ndarray: Latent embeddings.
-        """
-
-IMSContrastiveModel_decode_DOC = """
-        Reconstructs spectral profiles from latent vectors.
-
-        Args:
-            z (torch.Tensor): Latent vectors of shape [Batch, latent_dim].
-
-        Returns:
-            np.ndarray: Reconstructed intensities [Batch, Bins].
+        :param z: Latent vectors of shape ``[Batch, latent_dim]``.
+        :type z: torch.Tensor | np.ndarray
+        :param grid_xs: If True, returns raw intensities on the internal grid. 
+                        If False, uses ``InverseBinner`` to return (m/z, intensities).
+        :type grid_xs: bool
+        :returns: Reconstructed spectra.
+        :rtype: np.ndarray | tuple(np.ndarray, np.ndarray)
         """

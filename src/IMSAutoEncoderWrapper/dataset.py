@@ -20,20 +20,32 @@ from .utils.Binners import IMSPyTorchBinner
 
 class IMSPyTorchDataset(Dataset):
     """
-    PyTorch Dataset wrapper for M2AIA ImzMLReader.
-    
-    This class handles the transformation of raw Mass Spectrometry Imaging (MSI) 
-    spectra into a fixed-size tensor format suitable for Deep Learning. It performs 
-    on-the-fly resampling / binning of irregular m/z axes to a common reference grid.
+    An adapter class that bridges the M2AIA ImzMLReader with the PyTorch Dataset ecosystem.
 
-    Key Features:
-    - Extracts tissue pixels (valid spectra) for training.
-    - Standardizes m/z axes across the entire dataset.
-    - Handles missing data or corrupted spectra gracefully.
-    
-    Note:
-        It is assumed that the input m2aia_img is already preprocessed (TIC 
-        normalization, noise reduction) before being passed to this dataset.
+    This class is responsible for loading raw Mass Spectrometry Imaging (MSI) data 
+    and managing the local training samples. It acts as a wrapper around the 
+    m2aia reader to ensure data is served in a format compatible with Deep Learning.
+
+    **Why use Binning?**
+    Raw MSI data often has irregular m/z axes (different m/z values per pixel). 
+    Convolutional Neural Networks (CNNs) rely on spatial consistency—meaning a 
+    specific index in the input tensor must always represent the same m/z value. 
+    This class utilizes binners from ``utils.Binners`` to project irregular 
+    spectra onto a fixed, common grid, allowing CNN kernels to learn 
+    local chemical patterns effectively.
+
+    **Data Handling & Safety:**
+    - **Spatial Identification**: The dataset returns the ``spatial_idx`` along with 
+      the spectral tensor, enabling the reconstruction of the latent space back 
+      into the original X,Y tissue coordinates.
+    - **Error Resilience**: If a spectrum at a specific index is corrupted or 
+      missing in the imzML file, the class returns a zero-filled tensor of the 
+      correct dimensions. This prevents training crashes and maintains batch consistency.
+
+    :param m2aia_img: Active m2aia reader object.
+    :type m2aia_img: m2aia.ImzMLReader
+    :param Binner: The binner object used to standardize the m/z axis.
+    :type Binner: IMSPyTorchBinner
     """
     def __init__(self, 
                 # obligatory 
@@ -73,18 +85,11 @@ class IMSPyTorchDataset(Dataset):
 
     def __getitem__(self, spatial_idx):
         """
-        Retrieves, resamples, and converts a spectrum to a PyTorch tensor.
+        Retrieves, bins, and converts a spectrum to a standardized PyTorch tensor.
 
-        Args:
-            idx (int): Index of the spectrum to retrieve.
-
-        Returns:
-            torch.Tensor: A 1D tensor of shape (len(grid),) containing 
-                resampled intensities as float32.
-        
-        Note:
-            If a spectrum cannot be loaded or is empty, a zero-filled tensor 
-            of the correct shape is returned to maintain batch consistency.
+        :param spatial_idx: The 0-based index of the spectrum in the m2aia object.
+        :returns: A tuple of (spatial_index, spectral_tensor).
+        :rtype: tuple(int, torch.Tensor)
         """
         # load data
         try: 

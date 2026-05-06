@@ -774,10 +774,10 @@ class IMSAutoEncoder(IMSModelVisualizer):
     def history(self):
         return copy.deepcopy(self._history)
 
-IMSAutoEncoder.__doc__ = DOCS.IMSContrastiveModel_DOC
-IMSAutoEncoder.__init__.__doc__ = DOCS.IMSContrastiveModel_init_DOC
-IMSAutoEncoder.fit.__doc__ = DOCS.IMSContrastiveModel_fit_DOC
-IMSAutoEncoder.transform.__doc__ = DOCS.IMSContrastiveModel_transform_DOC
-IMSAutoEncoder.encode.__doc__ = DOCS.IMSContrastiveModel_encode_DOC
-IMSAutoEncoder.decode.__doc__ = DOCS.IMSContrastiveModel_decode_DOC
+IMSAutoEncoder.__doc__ = DOCS.IMSAutoEncoder_main_DOC
+# IMSAutoEncoder.__init__.__doc__ = DOCS.IMSContrastiveModel_init_DOC
+IMSAutoEncoder.fit.__doc__ = DOCS.IMSAutoEncoder_fit_DOC
+IMSAutoEncoder.transform.__doc__ = DOCS.IMSAutoEncoder_transform_DOC
+IMSAutoEncoder.encode.__doc__ = DOCS.IMSAutoEncoder_encode_DOC
+IMSAutoEncoder.decode.__doc__ = DOCS.IMSAutoEncoder_decode_DOC
 
