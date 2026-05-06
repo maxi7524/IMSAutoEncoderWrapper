@@ -71,7 +71,7 @@ class IMSPyTorchDataset(Dataset):
         """Returns the total number of spectra available in the m2aia object."""
         return self.img.GetNumberOfSpectra()
 
-    def __getitem__(self, idx):
+    def __getitem__(self, spatial_idx):
         """
         Retrieves, resamples, and converts a spectrum to a PyTorch tensor.
 
@@ -89,13 +89,13 @@ class IMSPyTorchDataset(Dataset):
         # load data
         try: 
             ## Sample is single spectrum 
-            xs, ys = self.img.GetSpectrum(idx)
+            xs, ys = self.img.GetSpectrum(spatial_idx)
             ## map to common axis
             mapped_val = self.Binner(xs=xs, ys=ys)
-            return torch.tensor(mapped_val, dtype=torch.float32)
+            return spatial_idx, torch.tensor(mapped_val, dtype=torch.float32)
         except:
             ## if GetSpectrum(idx) is None
-            return torch.zeros(len(self.GetGridXAxis), dtype=torch.float32)
+            return spatial_idx, torch.zeros(len(self.GetGridXAxis), dtype=torch.float32)
     
     # ---------------------
     # helpers

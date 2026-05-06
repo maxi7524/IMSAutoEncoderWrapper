@@ -14,33 +14,42 @@ import copy
 
 # numerical libraries
 import numpy as np
+# important: updated depracated function
+np.fromstring = np.frombuffer
 import pandas as pd
 
 # torch
-from sympy import hyperexpand
 import torch
 from torch.utils.data import DataLoader
 
 
 # local modules
-from .architecture import ContrastiveAutoencoder, ContrastiveLoss
-from .optimization import suggest_cnn_configuration, train_loop_ims_contrastive_model
-from .dataloader import IMSPyTorchDataset
+## data
+from .dataset import IMSPyTorchDataset
+## model configuration
+from .architectures import ARCHITECTURES_REGISTRY, IMSBaseAutoencoderArchitecture
+from .criterions import CRITERIONS_REGISTRY,IMSABaseAutoEncoderCriterion
+from .optimization.trainer import train_model
 from .utils.Binners import IMSPyTorchBinner, IMSPyTorchInverseBinner, BINNER_REGISTRY
+## helpers
+from .utils.LatentSpace import build_latent_grid 
 from .utils.plots import IMSModelVisualizer
 from .utils import docs as DOCS 
-from .utils.LatentSpace import build_latent_grid 
-# IMS library 
+
+# IMS libraries
+## main 
 import m2aia as m2
+## writer
 from pyimzml.ImzMLWriter import ImzMLWriter 
 
 # TODO - by default we assume that we provide parameters for image 
 
-class IMSContrastiveModel(IMSModelVisualizer):
+class IMSAutoEncoder(IMSModelVisualizer):
     def __init__(self, 
                 # obligatory
                 ## path for model 
                 path: Path | str,
+                device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                 # train
                 ## parameters
                 epochs: int = 10, 
@@ -48,14 +57,19 @@ class IMSContrastiveModel(IMSModelVisualizer):
                 lr: float = 1e-3,
                 patience_limit: int = 5,
                 *,
+                # model configuration
+                ## model type
+                architecture: IMSBaseAutoencoderArchitecture = None,                
+                criterion: IMSABaseAutoEncoderCriterion = None,
                 ## model configuration      
-                latent_dim: int = None,
-                hyperparameters = None, 
-                ## data configuration
-                IMSLoader: IMSPyTorchDataset = None,
+                config: dict = None,
+
+                # data configuration
+                ## loader / dataset
+                IMSDataset: IMSPyTorchDataset = None,
+                ## binner 
                 Binner:  IMSPyTorchBinner = None,
                 InverseBinner: IMSPyTorchInverseBinner = None,
-                #TODO add: criterion, model type 
             
             ):
         '''
@@ -63,55 +77,306 @@ class IMSContrastiveModel(IMSModelVisualizer):
         '''
         # inherit
         super().__init__()
+
         # attributes
-        ## model
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Model will be loaded on {self._device}")
-        ## model configuratin
         self._path = Path(path)
-        self._latent_dim = latent_dim
-        self._hyperparameters = hyperparameters
+        self._device = device
+        print(f"Model will be loaded on {self._device}")
+        
+        # model
+        ## model configuratin
+        self._architecture = architecture
+        self._criterion = criterion
+
         ## data configuration
-        self._IMSLoader = IMSLoader
+        self._IMSDataset = IMSDataset
         self._Binner = Binner
         self._InverseBinner = InverseBinner
+
         ## train attributes
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.lr = lr
+        self.patience_limit = patience_limit
+
+        ## configuration storage
+        self._config = {
+            "Architecture": {},
+            "Criterion": {},
+            "Binner": {},
+            "InverseBinner": {}
+        }
+        ### update config
+        if config:
+            self._config.update(config)
+        ### training history
         self._history = []
-        self._epochs = epochs
-        self._batch_size = batch_size
-        self._lr = lr
-        self._patience_limit = patience_limit
-        ## INFO: model is initialized in`fit` method 
-        self._model = None
-        self._criterion = ContrastiveLoss(self._device)
+
+        
+    # ---------------------
+    # Model definition
+    # ---------------------
+
+    # ONE 
+
+    # --- Configure model ---
+
+    # TODO two concepts:
+    # 1: as it is *loading classes via methods* 
+    # 2: First init object then pass it 
+    # TODO - trzeba zrobić tak żeby obie konwencje były obsługiwane 
+
+    def SetArchitecture(self, ArchitectureClass: IMSBaseAutoencoderArchitecture, latent_dim: int, user_hyperparameters: dict = None):
+
+        self._ensure_loader_available()
+
+        # Handling existing architecture (not update - can broke model)
+        if self._architecture is not None:
+            out_txt_warning = '''Architecture is already initialized. For safety reason you can not define it again.'''
+            print(out_txt_warning)
+            return None
+
+        hyperparameters = ArchitectureClass.SetHyperparameters(
+            IMSDataset=self.IMSDataset, 
+            latent_dim=latent_dim, 
+            user_hyperparameters=user_hyperparameters, initialize_model=False)
+
+        # update config
+        self._config['Architecture'] = {
+            "name": ArchitectureClass.__name__,
+            ## For convenience (it is also in hyperparameters)
+            "latent_dim": latent_dim,
+            "hyperparameters": hyperparameters
+        }
+
+        self._architecture = ArchitectureClass(
+            **hyperparameters
+        ).to(self.device)
+
+        # Logger
+        print(f"[Manager] Architecture: {self._config['Architecture']['name']} initialized.")
+
+
+    def SetCriterion(self, CriterionClass, crit_params):
+        
+        self._config["Criterion"] = {
+            "name": CriterionClass.__name__,
+            "params": crit_params
+        }
+        self._criterion = CriterionClass(**crit_params)
+        self._criterion.device = self.device
+
+        # Logger
+        print(f"[Manager] Criterion: {self._config['Criterion']['name']} initialized.")
+
+    # --- Configure loader ---
+
+    # THOSE SHOULD BE InverseBinner.Setter, and SetInverseBinner, should working like: give class name and their params ???
+    def SetInverseBinner(self, InverseBinner):
+        self._InverseBinner = InverseBinner
+        self._config["InverseBinner"] = {
+            "name": self.InverseBinner.__class__.__name__,
+            "params": self.InverseBinner.GetConfig()
+        }
+
+
+
+    def SetIMSDataset(self, IMSDataset: IMSPyTorchDataset):
+        
+        # Adding dataset and save Binner Option
+        if not self._config['Binner']:
+            self._IMSDataset = IMSDataset
+            self._Binner = IMSDataset.Binner
+            self._config['Binner'] = {
+                "name": self.Binner.__class__.__name__,
+                "params": self.Binner.GetConfig()
+            }
+            # Logger
+            print(f"[Manager] Binner: {self._config['Binner']['name']} initialized.")
+
+        else: 
+            #TODO SHOULD CHECK DIMENSION - IF IMAGE CAN BE TRANSFERED *min_mz, max_mz should be same ...
+            self._ensure_untrained()
+            self._IMSDataset = IMSDataset
+
+            print(f"[Manager] Binner already exists {self._config['Binner']['name']} initialized.")
+
+
+    
+    # ability to change criterion (it does not change model structure behaves) 
+        
+    # ---------------------
+    # I/O operations 
+    # ---------------------        
+
+    def save(self, path: str | Path = None, filename: str = "model_weights.pt"):
+        """Saves model weights and training configuration."""
+        # Paths
+        path = Path(path) if path else self.path
+        path.mkdir(parents=True, exist_ok=True)
+
+        # save
+        ## model wages
+        torch.save(self._architecture.state_dict(), path / filename)
+
+        ## training history
+        if self.history:
+            df = pd.DataFrame(self.history)
+            df.to_csv(path / "training_history.csv", index=False)
+
+        ## save config
+        with open(path / "config.json", "w") as f:
+            json.dump(self._config, f, indent=4)
+
+        # Logger 
+        print(f"[Manager] Model and configuration saved to {path}")
+
+
+    def load(self, best_model: bool = True):
+        '''
+        Loads trained model
+        '''
+        load_path = self.path
+
+        # Load JSON configuration
+        config_file = load_path / 'config.json'
+        if not config_file.exists():
+            raise FileNotFoundError(f"Config file not found at {config_file}")
+
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+
+        self._config = config
+        print(f"[Manager] Loading and reconstructing model from {load_path}")
+
+        # Reconstruction
+        ## Binners
+        ### Binner
+        self._Binner = self._reconstruct_component(
+            self._config.get("Binner"), 
+            BINNER_REGISTRY
+        )
+        ### InverseBinner
+        self._InverseBinner = self._reconstruct_component(
+            self._config.get("InverseBinner"), BINNER_REGISTRY, 
+            Binner=self._Binner
+        )
+
+        ## Architecture
+        arch_cfg = self._config.get("Architecture")
+        if arch_cfg:
+            ArchClass = ARCHITECTURES_REGISTRY.get(arch_cfg["name"])
+            if ArchClass:
+                ### Instantiate architecture using saved hyperparameters
+                self._architecture = ArchClass(**arch_cfg["hyperparameters"]).to(self._device)
+                print(f"[OK] Architecture reconstructed: {arch_cfg['name']}")
+            else:
+                print(f"[FAILED] Architecture {arch_cfg['name']} not in registry.")
+
+        ## Criterion
+        crit_cfg = self._config.get("Criterion")
+        if crit_cfg:
+            CritClass = CRITERIONS_REGISTRY.get(crit_cfg["name"])
+            if CritClass:
+                ### Instantiate criterion using saved params
+                self._criterion = CritClass(**crit_cfg["params"])
+                print(f"[OK] Criterion reconstructed: {crit_cfg['name']}")
+            else:
+                print(f"[FAILED] Criterion {crit_cfg['name']} not in registry.")
+                
+        ## Weights
+        ### choose best model
+        if best_model:
+            weights_name = "model_weights.pt"
+        ### choose recent model
+        else:
+            weights_name = "model_latest.pt"
+        weights_path = load_path / weights_name
+        ### Load weights
+        if weights_path.exists():
+            self._architecture.load_state_dict(torch.load(weights_path, map_location=self._device))
+            self._is_trained = True
+            print(f"[OK] Weights loaded: {weights_name}")
+
+        ## History
+        history_path = load_path / "training_history.csv"
+        if history_path.exists():
+            self._history = pd.read_csv(history_path).to_dict('records')
+            print(f"[OK] History loaded ({len(self._history)} epochs)")
+
+        print("--- Model Load Complete ---\n")
+
+    def _reconstruct_component(self, comp_config: dict, registry: dict, **extra_params):
+        """
+        Internal helper to instantiate a class from a registry based on 
+        the provided configuration dictionary[cite: 21].
+        """
+        if not comp_config:
+            return None
+            
+        name = comp_config.get("name")
+        # Handles potential naming differences in config keys (params vs conf)
+        params = comp_config.get("params", {}).copy()
+        params.update(extra_params)
+        
+        comp_class = registry.get(name)
+        if comp_class:
+            instance = comp_class(**params)
+            print(f"[OK] Component reconstructed: {name}")
+            return instance
+        
+        print(f"[FAILED] Component {name} not found in registry.")
+        return None
+        
+
 
     # ---------------------
-    # model essentials 
+    # Training & Inference
     # ---------------------
 
     # --- training ---
 
-    def fit(self, save_dir: str | Path = None, continue_training = False):
+    def fit(
+            self, 
+            save_dir: str | Path = None, 
+            continue_training = False,
+            train_model_config: dict = None,
+            TorchLoader_config: dict = None, 
+            ):
         
         # handlers
         self._ensure_model_initialized()
         self._ensure_loader_available()
         self._ensure_binners_ready()
 
-        if save_dir is None:
-            save_dir = self.path
-        else:
-            save_dir = Path(save_dir)
+        # outdir 
+        save_dir = Path(save_dir) if save_dir else self._path
+        
+        # train_model
+        ## Defaults settings
+        train_model_params = {'epochs': 10, 'lr': 1e-3, 'patience_limit': 5}
+        if train_model_config:
+            train_model_params.update(train_model_config)
 
-        train_loader = DataLoader(
-            self.IMSLoader, 
-            batch_size=self._batch_size, 
-            # # TODO SET PARAMS: here you can adjust parameters settings
-            pin_memory= True,      
-            num_workers = 2,   
-            # shuffle=True
+        # DataLoader
+        ## Default settings
+        TorchLoader_params = {
+            'batch_size': self.batch_size, 
+            'pin_memory': True,
+            'num_workers': 2,
+            'shuffle': True
+            # itd.
+        }
+        ## Update settings
+        if TorchLoader_config:
+            TorchLoader_params.update(TorchLoader_config)
+        ## Define loader
+        TorchLoader = DataLoader(
+            self.IMSDataset, 
+            **TorchLoader_params   
             )
 
+        ## Define helper function for saving data
         def save_callback(metrics, is_best):
             save_dir.mkdir(parents=True, exist_ok=True)
             self._history.append(metrics)
@@ -125,18 +390,20 @@ class IMSContrastiveModel(IMSModelVisualizer):
 
         # load latest model weights (not best) - if training was interrupted 
         if continue_training:
-            self._model = torch.load(self.path / 'model_latest.pt')
-            print('[fit]: Continue training on latest model ...')
+            weights_path = self.path / 'model_latest.pt'
+            self._architecture.load_state_dict(torch.load(weights_path, map_location=self._device))
+            print('[fit]: Continue training on latest weights...')
 
-        train_loop_ims_contrastive_model(
-            model=self.model,
-            dataloader=train_loader, 
-            criterion=self._criterion,
-            device=self._device, 
-            epochs=self._epochs, 
-            lr=self._lr, 
-            patience_limit=self._patience_limit,
-            save_callback=save_callback
+
+        train_model(
+            ## Model configuration
+            model=self._architecture,
+            dataloader=TorchLoader,
+            criterion=self.criterion,
+            device=self.device,
+            ## train model settings
+            save_callback=save_callback,
+            **train_model_params
         )
 
     # --- autoencoder operations ---
@@ -150,10 +417,10 @@ class IMSContrastiveModel(IMSModelVisualizer):
         self._ensure_trained()
         self._ensure_loader_available()
 
-        self.model.eval()
+        self._architecture.eval()
         x_tensor = self._prepare_input(x)
         with torch.no_grad():
-            z_norm = self.model.encoder(x_tensor.to(self._device))
+            z_norm = self._architecture.encoder(x_tensor.to(self._device))
         return z_norm.cpu().numpy()
 
     def decode(self, z: torch.Tensor, grid_xs=False):
@@ -167,11 +434,11 @@ class IMSContrastiveModel(IMSModelVisualizer):
         self._ensure_binners_ready()
         self._ensure_trained()
 
-        self.model.eval()
+        self._architecture.eval()
         z_tensor = self._prepare_input(z)
         with torch.no_grad():
             #  we use decoder 
-            x_hat = self.model.decoder(z_tensor.to(self._device))
+            x_hat = self._architecture.decoder(z_tensor.to(self._device))
 
         # return ys value
         ## transform tensor to cpu
@@ -183,7 +450,7 @@ class IMSContrastiveModel(IMSModelVisualizer):
         return self.InverseBinner(x_hat)
             
 
-    def transform(self):
+    def transform(self, TorchLoader_config: dict = None):
         '''
         Method which transforms whole image to latent space and return image_shape x latent_dim
         '''
@@ -194,21 +461,29 @@ class IMSContrastiveModel(IMSModelVisualizer):
         self._ensure_loader_available()
 
         ## change model execution
-        self.model.eval()
+        self._architecture.eval()
         ## create loader
-        loader = DataLoader(
-            self.IMSLoader, 
-            batch_size=self._batch_size, 
-            shuffle=False,
-            # loader settings
-            pin_memory=True,
-            num_workers = 2
-        )
+        ### Default settings
+        TorchLoader_params = {
+            'batch_size': self.batch_size, 
+            'pin_memory': True,
+            'num_workers': 2,
+            'shuffle': True
+            # itd.
+        }
+        ### Update settings
+        if TorchLoader_config:
+            TorchLoader_params.update(TorchLoader_config)
+        ### Define loader
+        TorchLoader = DataLoader(
+            self.IMSDataset, 
+            **TorchLoader_params   
+            )
         embeddings = []
 
         print("[Model] Encoding image to latent space...")
         with torch.no_grad(): # ram saving
-            for batch in loader:
+            for spatial_idx, batch in TorchLoader:
                 embeddings.append(self.encode(batch))
 
             print("[Model] Done encoding image.")
@@ -229,7 +504,7 @@ class IMSContrastiveModel(IMSModelVisualizer):
             embeddings = self.transform() # Returns (N, C)
             
             # Get internal 0-indexed positions directly from m2aia
-            I = self.IMSLoader.img
+            I = self.IMSDataset.img
             coordinates = np.array([I.GetSpectrumPosition(i) for i in range(I.GetNumberOfSpectra())])
 
         return build_latent_grid(embeddings, coordinates)
@@ -256,7 +531,7 @@ class IMSContrastiveModel(IMSModelVisualizer):
         latent_embeddings = self.transform()
 
         # img metadata
-        I = self.IMSLoader.img
+        I = self.IMSDataset.img
         ## obtain metadata from m2aia
         metadata = I.GetMetaData()
         n_spectra = I.GetNumberOfSpectra()
@@ -316,7 +591,7 @@ class IMSContrastiveModel(IMSModelVisualizer):
         latent_ds = latent_ds = torch.utils.data.TensorDataset(torch.from_numpy(embeddings).float())
         latent_loader = torch.utils.data.DataLoader(
             latent_ds, 
-            batch_size=self._batch_size, 
+            batch_size=self.batch_size, 
             shuffle=False
         )
 
@@ -335,15 +610,15 @@ class IMSContrastiveModel(IMSModelVisualizer):
             start_time = time.time()
             last_log_percent = 0
 
-            self.model.eval()
+            self._architecture.eval()
             ## decoding 
             with torch.no_grad():
                 for i, (z_batch,) in enumerate(latent_loader):
                     ### Decode entire batch on GPU and move to CPU
-                    x_hat_batch = self.model.decoder(z_batch.to(self._device)).cpu().numpy()
+                    x_hat_batch = self._architecture.decoder(z_batch.to(self._device)).cpu().numpy()
                     
                     ### Slice coordinates corresponding to the current batch
-                    start_idx = i * self._batch_size
+                    start_idx = i * self.batch_size
                     batch_coords = coordinates[start_idx : start_idx + len(x_hat_batch)]
 
                     ### Zip decoded spectra with coordinates for iterative writing
@@ -376,134 +651,13 @@ class IMSContrastiveModel(IMSModelVisualizer):
                         last_log_percent = current_percent
 
         print(f"[Model] Reconstruction complete. Output saved to: {output_imzml}")
-        
-    # ---------------------
-    # save & load & initialization model 
-    # ---------------------
-
-    def define_model(self,
-            ## model configuration      
-            latent_dim: int,
-            IMSLoader: IMSPyTorchDataset,
-            InverseBinner: IMSPyTorchInverseBinner,
-            ## data configuration
-            hyperparameters = None, 
-        ):
-        # adding attributes needed to create configuration, 
-        self._latent_dim = latent_dim
-        self._IMSLoader = IMSLoader
-        self._Binner = IMSLoader.Binner
-        self._InverseBinner = InverseBinner
-        self._hyperparameters = hyperparameters
-
-        if self._model is None:
-            print('[IMSContrastiveModel]: Initialization of new model ... ')
-            self._hyperparameters = suggest_cnn_configuration(self.IMSLoader, self._latent_dim, self._hyperparameters)
-            self._model = ContrastiveAutoencoder(**self._hyperparameters).to(self._device)
-            #TODO - should write parameters we obtain
-        
-        else: 
-            out_txt_warning = '''Model is already initialized. For safety reason you can not define it again.
-            
-            Create new instance of class.'''
-            #TODO - should write parameters/architecture of current model 
-
-            print(out_txt_warning)
-            pass
-
-    def save(self, path: str | Path = None, filename: str = "model_weights.pt"):
-        """Saves model weights and training configuration."""
-        # local path 
-        if path is None:
-            path = self.path
-        else:
-            path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
-
-        # save
-        ## model wages
-        torch.save(self.model.state_dict(), path / filename)
-        ## training history
-        if self.history:
-            df = pd.DataFrame(self.history)
-            df.to_csv(path / "training_history.csv", index=False)
-        ## save hyperparameters
-        config = {
-            # TODO - zrobić testy które sprawdzają łądowanie tego 
-            "latent_dim": int(self._latent_dim),
-            # added binner to allow reconstruction
-            "binner_type": self.Binner.__class__.__name__,
-            "binner_config": self.Binner.GetConfig(),
-            "inverse_binner_type": self.InverseBinner.__class__.__name__,
-            "inverse_binner_config": self.InverseBinner.GetConfig(), 
-            "hyperparameters": copy.deepcopy(self._hyperparameters)
-        }
-        with open(path / "config.json", "w") as f:
-            json.dump(config, f, indent=4)
-
-
-    def load(self, best_model: bool = True):
-        '''
-        Loads trained model
-        '''
-        load_path = self.path
-
-        # Load JSON configuration
-        config_file = load_path / 'config.json'
-        if not config_file.exists():
-            raise FileNotFoundError(f"Config file not found at {config_file}")
-
-        with open(config_file, 'r') as f:
-            config = json.load(f)
-
-        # Binners 
-
-        ## Helper function
-        def reconstruct_binner(b_type, b_config):
-            if b_type in BINNER_REGISTRY:
-                # It loads binner from implemented binners in BINNER_REGISTRY
-                return BINNER_REGISTRY[b_type](**b_config)
-            print(f"[Load Warning]: Binner type '{b_type}' not in registry. Manual setup required.")
-            return None
-        
-        ## Reconstruction
-        ### binner 
-        self._Binner = reconstruct_binner(config['binner_type'], config['binner_config'])
-        ### inverse (need to add binner first)
-        inv_config = config['inverse_binner_config']
-        inv_config['Binner'] = self.Binner
-        self._InverseBinner = reconstruct_binner(config['inverse_binner_type'], inv_config)
-
-        # Model initialization 
-    
-        ## architecture
-        self._latent_dim = config["latent_dim"]
-        self._hyperparameters = config["hyperparameters"]
-        self._model = ContrastiveAutoencoder(**self._hyperparameters).to(self._device)
-        
-        ## weights
-        ### choose best model
-        if best_model:
-            weights_path = load_path / "model_weights.pt"
-        ### choose recent model
-        else:
-            weights_path = load_path / "model_latest.pt"
-        ### Load weights
-        if weights_path.exists():
-            self._model.load_state_dict(torch.load(weights_path, map_location=self._device))
-            self._is_trained = True
-
-        ## History
-        history_path = load_path / "training_history.csv"
-        if history_path.exists():
-            self._history = pd.read_csv(history_path).to_dict('records')
-
-        print(f"[Load]: Model loaded successfully from {load_path}")
 
 
     # ---------------------
-    # helpers
+    # Utilities
     # ---------------------
+
+    # --- Helpers: ---
 
     def _prepare_input(self, data: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
         """
@@ -515,23 +669,27 @@ class IMSContrastiveModel(IMSModelVisualizer):
         # Ensure correct type and move to device
         return data.float().to(self._device)
     
-    # --- Handlers: Not initialized model
+    # --- Handlers: Not initialized handlers --- 
 
     def _ensure_model_initialized(self):
-        if self._model is None:
+        if self._architecture is None:
             raise RuntimeError(
                 f"Model is not initialized. Call .define_model() or .load('{self.path}') first."
             )
 
     def _ensure_loader_available(self):
-        if self._IMSLoader is None:
+        if self._IMSDataset is None:
             raise ValueError(
-                "IMSLoader is missing. You cannot perform operations requiring raw MSI data (like .fit() or .transform())."
+                "IMSDataset is missing. You cannot perform operations requiring raw MSI data (like .fit() or .transform())."
             )
 
     def _ensure_trained(self):
         if not self._history:
             print("[Warning]: Operating on an untrained model. Results may be noise.")
+
+    def _ensure_untrained(self):
+        if self._history:
+            print("[Warning]: Operating on an trained model. IMSDataset, must have set same binner.")
 
     def _ensure_binners_ready(self):
         if self._Binner is None or self._InverseBinner is None:
@@ -544,24 +702,40 @@ class IMSContrastiveModel(IMSModelVisualizer):
     # getters and setters
     # ---------------------
 
-    
-    
+    # --- obligatory ---
+
     @property
     def path(self):
         return self._path
+    
+    @property
+    def device(self):
+        return self._device
 
-    # #TODO - to nie powinno być edytowalne - to zależy jak obsługujemy całość 
-    # @path.setter
-    # def path(self, path: Path | str):
-    #     self._path = Path(path)
+    # --- model type ---
 
     @property
-    def IMSLoader(self):
-        return self._IMSLoader
+    def architecture(self):
+        return self._architecture
+    
+    @property
+    def criterion(self):
+        return self._criterion
+    
+     # --- model configuration ---
+    
+    @property
+    def latent_dim(self):
+        return self._latent_dim
+    
+    @property
+    def hyperparameters(self):
+        return self._hyperparameters
 
     @property
-    def model(self):
-        if self._model is None:
+    def Model(self):
+        #TODO trzeba to zmienc 
+        if self._architecture is None:
             print(f'''Model is not initialized.
                   
                   Initialize it using:
@@ -569,8 +743,14 @@ class IMSContrastiveModel(IMSModelVisualizer):
                   - `load` method which loads preexisting model from {self.path} folder''')
             return None
         else:
-            return copy.deepcopy(self._model)
+            return copy.deepcopy(self._architecture)
 
+    # --- data configuration ---
+
+    @property
+    def IMSDataset(self):
+        return self._IMSDataset
+    
     @property
     def Binner(self):
         return self._Binner
@@ -578,19 +758,26 @@ class IMSContrastiveModel(IMSModelVisualizer):
     @property
     def InverseBinner(self):
         return self._InverseBinner
-
+    
     @InverseBinner.setter
     def InverseBinner(self, InverseBinner: IMSPyTorchInverseBinner):
         self._InverseBinner = InverseBinner
+
+    # --- train ---
+
+    # TODO
+    ## ADD BATCH SIZE HERE - it should calculate available memory and model size with all weights and print if there is risk of getting memory limit - 
+
+    # --- other ---
     
     @property
     def history(self):
-        return self._history
+        return copy.deepcopy(self._history)
 
-IMSContrastiveModel.__doc__ = DOCS.IMSContrastiveModel_DOC
-IMSContrastiveModel.__init__.__doc__ = DOCS.IMSContrastiveModel_init_DOC
-IMSContrastiveModel.fit.__doc__ = DOCS.IMSContrastiveModel_fit_DOC
-IMSContrastiveModel.transform.__doc__ = DOCS.IMSContrastiveModel_transform_DOC
-IMSContrastiveModel.encode.__doc__ = DOCS.IMSContrastiveModel_encode_DOC
-IMSContrastiveModel.decode.__doc__ = DOCS.IMSContrastiveModel_decode_DOC
+IMSAutoEncoder.__doc__ = DOCS.IMSContrastiveModel_DOC
+IMSAutoEncoder.__init__.__doc__ = DOCS.IMSContrastiveModel_init_DOC
+IMSAutoEncoder.fit.__doc__ = DOCS.IMSContrastiveModel_fit_DOC
+IMSAutoEncoder.transform.__doc__ = DOCS.IMSContrastiveModel_transform_DOC
+IMSAutoEncoder.encode.__doc__ = DOCS.IMSContrastiveModel_encode_DOC
+IMSAutoEncoder.decode.__doc__ = DOCS.IMSContrastiveModel_decode_DOC
 
