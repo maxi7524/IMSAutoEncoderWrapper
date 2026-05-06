@@ -468,7 +468,7 @@ class IMSAutoEncoder(IMSModelVisualizer):
             'batch_size': self.batch_size, 
             'pin_memory': True,
             'num_workers': 2,
-            'shuffle': True
+            'shuffle': False
             # itd.
         }
         ### Update settings

@@ -63,7 +63,7 @@ class ContrastiveAutoencoderMax_InverseDim(IMSBaseAutoencoderArchitecture):
         return self.decoder(z)
 
     @staticmethod
-    def SetHyperparameters(IMSDataset: IMSPyTorchDataset, latent_dim: int, user_hyperparameters: dict=None, initialize_model: bool = True) -> dict | ContrastiveAutoencoderSkrajny:
+    def SetHyperparameters(IMSDataset: IMSPyTorchDataset, latent_dim: int, user_hyperparameters: dict=None, initialize_model: bool = True) -> dict | ContrastiveAutoencoderMax_InverseDim:
         """
         Dynamically suggests hyperparameters based on spectral peak width and input depth.
 

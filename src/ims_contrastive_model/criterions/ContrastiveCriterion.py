@@ -15,7 +15,7 @@ from ..dataset import IMSPyTorchDataset
 from scipy.signal import find_peaks, peak_widths
 
 class ContrastiveCriterion(IMSABaseAutoEncoderCriterion):
-    """
+    r"""
     Composite loss function for Ion Mobility Spectrometry (IMS) contrastive learning.
     
     This criterion combines InfoNCE contrastive loss with architectural 
@@ -265,6 +265,10 @@ class ContrastiveCriterion(IMSABaseAutoEncoderCriterion):
         :rtype: list
         """
         peak_bank = []
+
+        if hasattr(dataset, 'peak_bank') and dataset.peak_bank:
+            print("PeakBank already exists in dataset. Skipping precomputation.")
+            return
         
         print(f"Building noise bank (max {max_peaks_per_spectrum} peaks per spectrum)...")
         
@@ -298,5 +302,6 @@ class ContrastiveCriterion(IMSABaseAutoEncoderCriterion):
                     peak_bank.append((start, end, peak_vals))
                     
         ## Attach the bank to the dataset object
+        dataset.peak_bank = peak_bank
         print(f"PeakBank created with {len(peak_bank)} total noise samples.")
-        return peak_bank
+        

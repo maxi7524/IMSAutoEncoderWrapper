@@ -20,11 +20,41 @@ def train_model(
         save_callback: Callable
     ):
     """
-    General training engine for IMS Autoencoders. 
-    Handles REQUIRED_SETUP from Criterion and executes the training loop.
+    General-purpose training engine for Ion Mobility Spectrometry (IMS) Autoencoders.
 
-    #TODO think about:
-    - save callback vs giving model here (consequences of this decision)
+    This function orchestrates the training process, handling pre-computation tasks, 
+    the optimization loop, and early stopping logic. It is designed to be 
+    architecture-agnostic by delegating forward logic to the ``Criterion``.
+
+    **Execution Workflow:**
+    1. **Pre-computation**: Executes ``REQUIRED_SETUP`` tasks defined in the 
+       Criterion (e.g., building the Noise Peak Bank) using the dataset.
+    2. **Optimization**: Initializes the Adam optimizer with weight decay 
+       and a Cosine Annealing learning rate scheduler[cite: 8].
+    3. **Training Loop**:
+        * Iterates through batches, providing the full ``model`` and ``dataloader`` 
+          context to the Criterion's ``__call__`` method[cite: 8].
+        * Performs backpropagation and updates weights based on the loss components 
+          returned by the Criterion.
+    4. **Monitoring**: Tracks metrics, logs progress (ETA, loss), and triggers 
+       the ``save_callback`` for persistence and best-model tracking[cite: 8].
+
+    :param model: The neural network architecture (must inherit from IMSBaseAutoencoder).
+    :type model: IMSBaseAutoencoderArchitecture
+    :param dataloader: PyTorch DataLoader providing batches from an IMSPyTorchDataset.
+    :type dataloader: torch.utils.data.DataLoader
+    :param criterion: The loss function object containing forward logic and setup tasks.
+    :type criterion: IMSABaseAutoEncoderCriterion
+    :param device: Hardware target ('cuda' or 'cpu').
+    :type device: torch.device
+    :param epochs: Maximum number of training iterations.
+    :type epochs: int
+    :param lr: Initial learning rate.
+    :type lr: float
+    :param patience_limit: Number of epochs to wait for improvement before early stopping.
+    :type patience_limit: int
+    :param save_callback: Function called after each epoch to save weights and metrics.
+    :type save_callback: Callable[[dict, bool], None]
     """
     # Execute REQUIRED_SETUP tasks defined in the Criterion
     if hasattr(criterion, 'REQUIRED_SETUP'):

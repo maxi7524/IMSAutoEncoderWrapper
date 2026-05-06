@@ -31,7 +31,7 @@ shopt -s nullglob
 
 # extract zip files
 # Extract all ZIP files and remove them afterwards
-for zip_file in "$DATA_DIR"/*.zip; do
+for zip_file in "$DATA_DIR"/*.7z; do
     unzip -o "$zip_file" -d "$DATA_DIR"
     rm "$zip_file"
 done
